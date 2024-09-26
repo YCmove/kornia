@@ -12,7 +12,9 @@ from kornia.utils.helpers import _torch_solve_cast, _torch_svd_cast
 
 from .numeric import cross_product_matrix, matrix_cofactor_tensor
 from .projection import depth_from_point, projection_from_KRt
-from .triangulation import triangulate_points
+# from .triangulation import triangulate_points
+# import torch.nn.functional as F
+from kornia.geometry.conversions import convert_points_to_homogeneous, convert_points_from_homogeneous
 
 __all__ = [
     "find_essential",
@@ -24,6 +26,67 @@ __all__ = [
     "relative_camera_motion",
     "decompose_essential_matrix_no_svd",
 ]
+
+
+def find_optimal_pts_by_niter2(
+    E_mat: torch.Tensor,
+    R1: torch.Tensor,
+    t1: torch.Tensor,
+    R2: torch.Tensor,
+    t2: torch.Tensor,
+    points1: torch.Tensor,
+    points2: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    
+    B = points1.shape[0]
+    # E_mat = essential_from_Rt(R1, t1, R2, t2)
+    points1 = convert_points_to_homogeneous(points1)
+    points2 = convert_points_to_homogeneous(points2)
+
+    points1 = points1.transpose(1, 2)
+    points2 = points2.transpose(1, 2)
+
+    S = torch.Tensor([[1,0,0],[0,1,0]])
+    S = S.repeat(B, 1, 1).double().type(points1.dtype).to(points1.device)
+
+    # Epipolar lines
+    n1 = S @ E_mat @ points2
+    n2 = S @ E_mat.transpose(1, 2) @ points1
+    # n1 = (S @ (E_mat @ points2.transpose(1, 2))).squeeze(-1).unsqueeze(0)
+    # n2 = (S @ (E_mat.transpose(1,2) @ points1.transpose(1, 2))).squeeze(-1).unsqueeze(0)
+
+    z1 = t1[:, 2]
+    Q = R1[:, 0, 0]
+    # Create the skew-symmetric matrix for each batch
+    E_tilde = torch.zeros((t1.size(0), 2, 2), dtype=points1.dtype, device=points1.device)
+    E_tilde[:, 0, 1] = -z1
+    E_tilde[:, 1, 0] = z1
+
+    # Scale the matrix by Q
+    E_tilde *= Q.view(-1, 1, 1)
+
+    a = n1.transpose(1,2) @ E_tilde @ n2
+    b = (torch.norm(n1) + torch.norm(n2)) / 2.0
+    c = points1.transpose(1,2) @ E_mat @ points2
+    d = (torch.abs(b**2 - a * c)).sqrt()
+
+    lamb = c / (b + d)
+    delta1 = lamb * n1
+    delta2 = lamb * n2
+    n1 -= E_tilde @ delta2
+    n2 -= E_tilde.transpose(1,2) @ delta1
+    
+    lamb *= (2.0 * d) / (n1.transpose(1,2) @ n1 + n2.transpose(1,2) @ n2)
+    delta1 = lamb * n1
+    delta2 = lamb * n2
+    points1 -= S.transpose(1,2) @ delta1
+    points2 -= S.transpose(1,2) @ delta2
+
+    optimal_point1 = convert_points_from_homogeneous(points1.transpose(1,2))
+    optimal_point2 = convert_points_from_homogeneous(points2.transpose(1,2))
+    # optimal_point2 = F.normalize(points2, dim=1).transpose(1,2)
+
+    return optimal_point1, optimal_point2
 
 
 def run_5point(points1: torch.Tensor, points2: torch.Tensor, weights: Optional[torch.Tensor] = None) -> torch.Tensor:

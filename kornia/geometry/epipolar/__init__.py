@@ -13,6 +13,7 @@ from .essential import (
     motion_from_essential,
     motion_from_essential_choose_solution,
     relative_camera_motion,
+    find_optimal_pts_by_niter2,
 )
 from .fundamental import (
     compute_correspond_epilines,
@@ -35,9 +36,13 @@ from .projection import (
     scale_intrinsics,
 )
 from .scene import generate_scene
-from .triangulation import triangulate_points
+from .triangulation import (
+    triangulate_points,
+    triangulate_optimalpoints
+    )
 
 __all__ = [
+    "triangulate_optimalpoints",
     "cross_product_matrix",
     "sampson_epipolar_distance",
     "symmetrical_epipolar_distance",
@@ -68,4 +73,5 @@ __all__ = [
     "get_closest_point_on_epipolar_line",
     "find_essential",
     "decompose_essential_matrix_no_svd",
+    "find_optimal_pts_by_niter2",
 ]
